@@ -1,0 +1,58 @@
+# Simple Redirects DSL Configuration Examples
+# Format: SOURCE_PATTERN OPERATOR TARGET_PATTERN [MODIFIERS]
+#
+# Operators:
+#   ->  Redirect (301 by default)
+#   =>  Proxy (reverse proxy)
+#   !!  Block (return error code)
+
+# ===== Redirects =====
+
+# Simple redirect with default 301
+old-site.com -> https://new-site.com
+
+# Redirect with custom status code
+www.example.com -> https://example.com [302]
+
+# Redirect with priority (lower number = higher priority)
+special.example.com -> https://special.example.com [p:1]
+
+# ===== Proxies =====
+
+# Simple proxy
+api.example.com => http://backend:8080
+
+# Proxy with path transformation
+api.example.com /v1/* => http://backend:8080/api/$1
+
+# Proxy with path stripping
+api.example.com /api/* => http://backend:8080/_ [strip_path]
+
+# Named path captures
+example.com /users/:id/posts/:postId => http://backend:8080/api
+
+# Wildcard host to catch-all backend
+*.saas.example.com => http://app-backend:3000
+
+# Catch-all for any host
+* => http://default-backend:3000 [p:999]
+
+# ===== Blocks =====
+
+# Block specific hosts
+bad-actor.com !! 403
+
+# Block with custom status
+spam.example.com !! 404
+
+# ===== Complex Examples =====
+
+# Health check endpoint (high priority)
+api.example.com /health => http://backend:8080/healthz [p:1]
+
+# API versioning
+api.example.com /v2/* => http://backend-v2:8080/$1 [p:10]
+api.example.com /v1/* => http://backend-v1:8080/$1 [p:20]
+
+# Default API route (lower priority)
+api.example.com => http://backend-v1:8080 [p:100]

@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Documentation
+README.md
+CLAUDE.md
+
+# Mac
+.DS_Store
+
+# Scripts and examples directories (not needed in image)
+scripts/
+examples/
+
+# Documentation
+README.md
+DSL.md

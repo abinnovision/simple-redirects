@@ -1,0 +1,22 @@
+# Contains different utility checks for Pull Requests.
+name: PR Utils
+
+# Only apply to PRs which target 'main' branch.
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+jobs:
+  lint-commits:
+    name: Lint commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    steps:
+      - name: Run linter
+        uses: abinnovision/actions@run-commitlint-v1

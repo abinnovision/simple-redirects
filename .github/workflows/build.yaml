@@ -1,0 +1,220 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    branches:
+      - main
+
+jobs:
+  # Configure the commit SHA to use.
+  configure:
+    name: Configure
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      commit-sha: ${{ env.COMMIT_SHA }}
+    steps:
+      - name: Evaluate commit
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request_target" ]]; then
+              echo "PR is #${{ github.event.number }}..."
+              echo "PR Head SHA is ${{ github.event.pull_request.head.sha }}..."
+              echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          else
+              echo "Head SHA is ${{ github.sha }}..."
+              echo "COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+          fi
+
+  # Build and checks are unified into one job.
+  check_build:
+    name: Check & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - configure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.configure.outputs.commit-sha }}
+
+      - name: Read Go version from .tool-versions
+        id: go-version
+        run: |
+          GO_VERSION=$(grep "^golang" .tool-versions | awk '{print $2}')
+          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
+          echo "Go version: $GO_VERSION"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: true
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Go files are not formatted. Run 'go fmt ./...'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+
+      - name: Build binary
+        run: go build -v -o simple-redirects ./cmd/config-gen
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+        continue-on-error: true
+
+  # Build and push Docker image with SHA tag on every push to main
+  build_docker:
+    name: Build Docker Image (SHA)
+    runs-on: ubuntu-latest
+    needs:
+      - configure
+      - check_build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: "read"
+      packages: "write"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.configure.outputs.commit-sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract short SHA
+        id: sha
+        run: |
+          SHORT_SHA=$(echo "${{ needs.configure.outputs.commit-sha }}" | cut -c1-7)
+          echo "short=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "Short SHA: $SHORT_SHA"
+
+      - name: Read Go version from .tool-versions
+        id: go-version
+        run: |
+          GO_VERSION=$(grep "^golang" .tool-versions | awk '{print $2}')
+          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
+          echo "Go version: $GO_VERSION"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:sha-${{ steps.sha.outputs.short }}
+            ghcr.io/${{ github.repository }}:edge
+          labels: |
+            org.opencontainers.image.revision=${{ needs.configure.outputs.commit-sha }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+          build-args: |
+            GO_VERSION=${{ steps.go-version.outputs.version }}
+            NGINX_VERSION=1.27.3
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Will check if the release is needed and create a release PR if so.
+  release:
+    name: Release
+    needs:
+      - configure
+      - check_build
+    uses: abinnovision/workflows/.github/workflows/release-please.yaml@master
+    secrets: inherit
+    # Only run on push to "main" branch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  # Build and publish Docker image to GitHub Container Registry
+  publish:
+    name: Build & Publish Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - configure
+      - release
+    if: needs.release.outputs.releases_created
+    permissions:
+      contents: "read"
+      packages: "write"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.configure.outputs.commit-sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from release
+        id: version
+        run: |
+          VERSION=$(echo '${{ needs.release.outputs.tag_name }}' | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Read Go version from .tool-versions
+        id: go-version
+        run: |
+          GO_VERSION=$(grep "^golang" .tool-versions | awk '{print $2}')
+          echo "version=$GO_VERSION" >> $GITHUB_OUTPUT
+          echo "Go version: $GO_VERSION"
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GO_VERSION=${{ steps.go-version.outputs.version }}
+            NGINX_VERSION=1.27.3
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
