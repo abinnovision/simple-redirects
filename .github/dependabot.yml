@@ -1,14 +1,29 @@
+# $schema: https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/dependabot-2.0.json
 version: 2
 updates:
-  - package-ecosystem: github-actions
+  - package-ecosystem: gomod
     directory: /
+    open-pull-requests-limit: 15
     schedule:
-      interval: weekly
-      day: saturday
-      time: "13:00"
-      timezone: Europe/Berlin
-    commit-message:
-      prefix: "build(deps/gha)"
-    open-pull-requests-limit: 5
+      interval: daily
     labels:
       - dependencies
+    commit-message:
+      prefix: "fix(deps)"
+    cooldown:
+      default-days: 5
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    open-pull-requests-limit: 5
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]
