@@ -49,7 +49,7 @@ jobs:
           echo "Go version: $GO_VERSION"
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ steps.go-version.outputs.version }}
           cache: true
