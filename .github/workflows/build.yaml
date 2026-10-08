@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  pull_request_target:
+  pull_request:
     branches:
       - main
 
@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Evaluate commit
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request_target" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
               echo "PR is #${{ github.event.number }}..."
               echo "PR Head SHA is ${{ github.event.pull_request.head.sha }}..."
               echo "COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
