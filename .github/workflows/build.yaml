@@ -148,8 +148,10 @@ jobs:
     needs:
       - configure
       - check_build
-    uses: abinnovision/workflows/.github/workflows/release-please.yaml@master
-    secrets: inherit
+    uses: abinnovision/actions/.github/workflows/workflow.yaml@release-v2
+    permissions:
+      id-token: write
+      contents: read
     # Only run on push to "main" branch.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -160,7 +162,7 @@ jobs:
     needs:
       - configure
       - release
-    if: needs.release.outputs.releases_created
+    if: fromJSON(needs.release.outputs.versions)['.'].type == 'release'
     permissions:
       contents: "read"
       packages: "write"
@@ -183,7 +185,7 @@ jobs:
       - name: Extract version from release
         id: version
         run: |
-          VERSION=$(echo '${{ needs.release.outputs.tag_name }}' | sed 's/^v//')
+          VERSION='${{ fromJSON(needs.release.outputs.versions)['.'].packageVersion }}'
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
